@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./lib/supabaseClient";
-import Auth from "./pages/Auth"; // <-- Import Auth Baru
+import Auth from "./pages/Auth";
 import History from "./pages/History";
 import Statistics from "./pages/Statistics";
 import Settings from "./pages/Settings";
@@ -28,6 +28,9 @@ export default function App() {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // STATE JAM REAL-TIME
+  const [currentTime, setCurrentTime] = useState(new Date());
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
@@ -36,6 +39,12 @@ export default function App() {
     type: "pengeluaran",
     category_id: "",
   });
+
+  // EFFECT UNTUK JAM REAL-TIME
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // CEK SESI LOGIN SAAT APLIKASI DIMUAT
   useEffect(() => {
@@ -52,7 +61,7 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // HANYA TARIK DATA JIKA ADA SESI (USER SUDAH LOGIN)
+  // HANYA TARIK DATA JIKA ADA SESI
   useEffect(() => {
     if (session) {
       fetchInitialData();
@@ -65,7 +74,6 @@ export default function App() {
     setLoading(false);
   }
 
-  // ... (FUNGSI FETCH DAN INSERT TETAP SAMA SEPERTI SEBELUMNYA) ...
   async function fetchTransactions() {
     const { data } = await supabase
       .from("transactions")
@@ -118,7 +126,6 @@ export default function App() {
           description: formData.description,
           type: formData.type,
           category_id: formData.category_id,
-          // user_id: session.user.id <-- Nanti ini diaktifkan jika RLS Database sudah mengunci per user
         },
       ]);
       if (error) throw error;
@@ -137,6 +144,21 @@ export default function App() {
     }
   }
 
+  // FUNGSI UNTUK SALAM DINAMIS
+  const getGreeting = () => {
+    const hour = currentTime.getHours();
+    if (hour < 11) return "Selamat Pagi";
+    if (hour < 15) return "Selamat Siang";
+    if (hour < 19) return "Selamat Sore";
+    return "Selamat Malam";
+  };
+
+  // FORMAT JAM (Contoh: 22:45)
+  const timeString = currentTime.toLocaleTimeString("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
   const filteredCategories = categories.filter(
     (cat) => cat.type === formData.type,
   );
@@ -153,13 +175,10 @@ export default function App() {
       minimumFractionDigits: 0,
     }).format(val);
 
-  // --- RENDER HALAMAN ---
-  // JIKA BELUM LOGIN, TAMPILKAN HALAMAN AUTH
   if (!session) {
     return <Auth />;
   }
 
-  // AMBIL DATA PROFIL DARI SESI SUPABASE DENGAN SANGAT AMAN
   const userData = session?.user?.user_metadata || {};
   const displayPhoto = userData?.avatar_url || "";
   const displayName =
@@ -256,6 +275,7 @@ export default function App() {
         <header
           className={`flex justify-between items-center ${currentPath === "dashboard" ? "mb-8" : "mb-2 md:mb-8"}`}
         >
+          {/* BAGIAN KIRI: Profil & Salam Dinamis */}
           <div
             className={`${currentPath === "dashboard" ? "flex items-center gap-4" : "hidden md:flex items-center gap-4 opacity-0 pointer-events-none"}`}
           >
@@ -272,18 +292,32 @@ export default function App() {
             )}
             <div>
               <p className="text-slate-400 text-sm font-medium">
-                Selamat sore,
+                {getGreeting()},
               </p>
               <h2 className="text-2xl font-black text-white">{displayName}</h2>
             </div>
           </div>
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="hidden md:flex items-center gap-2 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold py-2.5 px-6 rounded-2xl transition-all shadow-lg shadow-teal-500/20 active:scale-95"
+
+          {/* BAGIAN KANAN: Jam Real-time & Tombol Tambah (Di Dashboard Saja untuk HP) */}
+          <div
+            className={`${currentPath === "dashboard" ? "flex items-center gap-4" : "hidden md:flex items-center gap-4 opacity-0 pointer-events-none"}`}
           >
-            <Plus size={20} weight="bold" />
-            <span>Transaksi</span>
-          </button>
+            {/* Jam Real-time */}
+            <div className="bg-slate-900/80 border border-slate-800 px-3 py-1.5 rounded-xl shadow-inner flex items-center justify-center">
+              <span className="text-xs md:text-sm font-bold text-teal-400 font-mono tracking-widest">
+                {timeString} WIB
+              </span>
+            </div>
+
+            {/* Tombol Transaksi (Hanya muncul di Desktop) */}
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="hidden md:flex items-center gap-2 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold py-2.5 px-6 rounded-2xl transition-all shadow-lg shadow-teal-500/20 active:scale-95"
+            >
+              <Plus size={20} weight="bold" />
+              <span>Transaksi</span>
+            </button>
+          </div>
         </header>
 
         {/* VIEW ROUTER */}
@@ -374,14 +408,16 @@ export default function App() {
         {currentPath !== "settings" && (
           <button
             onClick={() => setIsModalOpen(true)}
-            className="md:hidden fixed bottom-28 right-6 bg-teal-500 text-slate-950 p-4 rounded-[24px] shadow-[0_20px_40px_rgba(45,212,191,0.3)] active:scale-90 transition-all z-40 ring-4 ring-slate-950"
+            // FAB disesuaikan sedikit turun (bottom-24) agar sejajar dengan navbar yang lebih rendah
+            className="md:hidden fixed bottom-24 right-6 bg-teal-500 text-slate-950 p-4 rounded-[24px] shadow-[0_20px_40px_rgba(45,212,191,0.3)] active:scale-90 transition-all z-40 ring-4 ring-slate-950"
           >
             <Plus size={32} weight="bold" />
           </button>
         )}
       </main>
 
-      <nav className="md:hidden fixed bottom-0 w-full bg-slate-950/80 backdrop-blur-2xl border-t border-slate-900/50 flex justify-around items-center p-4 pb-10 z-50">
+      {/* NAVBAR MOBILE: Diperbarui dengan p-3 pb-6 agar sedikit lebih turun */}
+      <nav className="md:hidden fixed bottom-0 w-full bg-slate-950/80 backdrop-blur-2xl border-t border-slate-900/50 flex justify-around items-center p-3 pb-6 z-50">
         <button
           onClick={() => setCurrentPath("dashboard")}
           className="flex flex-col items-center transition-all active:scale-90"
@@ -433,7 +469,6 @@ export default function App() {
       </nav>
 
       {/* MODAL POPUP */}
-      {/* ... (SISA KODE MODAL TAMBAH TRANSAKSI TETAP SAMA) ... */}
       {isModalOpen && (
         <div
           className="fixed inset-0 z-[70] flex items-end md:items-center justify-center p-0 md:p-4 bg-slate-950/90 backdrop-blur-md animate-in fade-in duration-300"
